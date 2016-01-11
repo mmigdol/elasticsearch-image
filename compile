@@ -1,0 +1,7 @@
+#!/usr/bin/php
+<?php
+
+passthru(sprintf("docker build -t jmoati/mvn %s/mvn", __DIR__));
+passthru(sprintf("docker run -v %s:/target jmoati/mvn", __DIR__));
+
+passthru(sprintf("sudo chown -R %s %s/target", get_current_user(), __DIR__));
