@@ -3,10 +3,12 @@ package org.elasticsearch.plugin.image.test;
 import org.apache.sanselan.ImageFormat;
 import org.apache.sanselan.ImageWriteException;
 import org.apache.sanselan.Sanselan;
+import org.elasticsearch.action.get.GetResponse;
 import org.elasticsearch.action.index.IndexResponse;
 import org.elasticsearch.action.search.SearchResponse;
 import com.google.common.collect.Maps;
 import org.elasticsearch.common.settings.Settings;
+import org.elasticsearch.index.get.GetField;
 import org.elasticsearch.index.mapper.image.FeatureEnum;
 import org.elasticsearch.index.mapper.image.HashEnum;
 import org.elasticsearch.index.query.BoolQueryBuilder;
@@ -16,6 +18,7 @@ import org.elasticsearch.index.query.image.ImageQueryBuilder;
 import org.elasticsearch.plugin.image.ImagePlugin;
 import org.elasticsearch.plugins.Plugin;
 import org.elasticsearch.search.SearchHit;
+import org.elasticsearch.search.SearchHitField;
 import org.elasticsearch.search.SearchHits;
 import org.elasticsearch.test.ESIntegTestCase;
 import org.junit.Before;
@@ -25,6 +28,8 @@ import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.Collection;
+import java.util.Iterator;
+import java.util.Map;
 
 import static org.elasticsearch.client.Requests.putMappingRequest;
 import static org.elasticsearch.common.io.Streams.copyToString;
@@ -93,13 +98,20 @@ public class ImageIntegrationTests extends ESIntegTestCase {
 
         // test search with hash
         ImageQueryBuilder imageQueryBuilder = new ImageQueryBuilder("img").feature(FeatureEnum.CEDD.name()).image(imgToSearch).hash(HashEnum.BIT_SAMPLING.name());
-        SearchResponse searchResponse = client().prepareSearch(INDEX_NAME).setTypes(DOC_TYPE_NAME).setQuery(imageQueryBuilder).addFields("img.metadata.exif_ifd0.x_resolution", "name").setSize(totalImages).get();
+        SearchResponse searchResponse = client().prepareSearch(INDEX_NAME)
+                .setTypes(DOC_TYPE_NAME)
+                .setQuery(imageQueryBuilder)
+                .addFields("img.metadata.exif_ifd0.x_resolution", "name")
+                .setSize(totalImages)
+                .get();
         assertNoFailures(searchResponse);
         SearchHits hits = searchResponse.getHits();
         assertThat("Should match at least one image", hits.getTotalHits(), greaterThanOrEqualTo(1l)); // if using hash, total result maybe different than number of images
         SearchHit hit = hits.getHits()[0];
         assertThat("First should be exact match and has score 1", hit.getScore(), equalTo(2.0f));
         assertImageScore(hits, nameToSearch, 2.0f);
+
+
         assertThat("Should have metadata", hit.getFields().get("img.metadata.exif_ifd0.x_resolution").getValues(), hasSize(1));
 
         // test search without hash and with boost

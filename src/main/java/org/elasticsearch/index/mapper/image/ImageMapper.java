@@ -16,6 +16,7 @@ import org.apache.lucene.index.IndexOptions;
 import org.apache.lucene.util.BytesRef;
 import org.elasticsearch.ElasticsearchGenerationException;
 import org.elasticsearch.ElasticsearchImageProcessException;
+import org.elasticsearch.common.Strings;
 import org.elasticsearch.common.collect.ImmutableOpenMap;
 import com.google.common.collect.Lists;
 import com.google.common.collect.MapMaker;
@@ -28,21 +29,16 @@ import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.common.xcontent.XContentBuilder;
 import org.elasticsearch.common.xcontent.XContentParser;
 import org.elasticsearch.index.mapper.*;
-import org.elasticsearch.threadpool.ThreadPool;
-
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.nio.ByteBuffer;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.CountDownLatch;
-import java.util.concurrent.Executor;
 
 import static org.elasticsearch.index.mapper.MapperBuilders.binaryField;
 import static org.elasticsearch.index.mapper.MapperBuilders.stringField;
-
-
 
 public class ImageMapper extends FieldMapper {
 
@@ -70,10 +66,9 @@ public class ImageMapper extends FieldMapper {
     }
 
     public static class Defaults {
-
         public static final ImageFieldType FIELD_TYPE = new ImageFieldType();
         static {
-			FIELD_TYPE.setIndexOptions(IndexOptions.DOCS);
+            FIELD_TYPE.setIndexOptions(IndexOptions.DOCS);
             FIELD_TYPE.setTokenized(false);
             FIELD_TYPE.freeze();
         }
@@ -103,16 +98,13 @@ public class ImageMapper extends FieldMapper {
 
     public static class Builder extends FieldMapper.Builder<Builder, ImageMapper> {
 
-        private ThreadPool threadPool;
-
         private Map<FeatureEnum, Map<String, Object>> features = Maps.newHashMap();
 
         private Map<String, FieldMapper.Builder> metadataBuilders = Maps.newHashMap();
 
-        public Builder(String name, ThreadPool threadPool) {
-            super(name,new ImageFieldType());
-            this.threadPool = threadPool;
-            this.builder = this;
+        public Builder(String name) {
+            super(name, Defaults.FIELD_TYPE);
+            builder = this;
         }
 
         public Builder addFeature(FeatureEnum featureEnum, Map<String, Object> featureMap) {
@@ -141,7 +133,6 @@ public class ImageMapper extends FieldMapper {
                 // add feature mapper
                 featureMappers.put(featureName, binaryField(featureName).store(true).includeInAll(false).index(false).build(context));
 
-
                 // add hash mapper if hash is required
                 if (featureMap.containsKey(HASH)){
                     List<String> hashes = (List<String>) featureMap.get(HASH);
@@ -162,38 +153,30 @@ public class ImageMapper extends FieldMapper {
             context.path().remove();  // remove METADATA
             context.path().remove();  // remove name
 
-            MappedFieldType defaultFieldType = Defaults.FIELD_TYPE.clone();
-            return new ImageMapper(name, threadPool, context.indexSettings(), features, featureMappers, hashMappers, metadataMappers,
+            setupFieldType(context);
+            return new ImageMapper(name,context.indexSettings(), features, featureMappers, hashMappers, metadataMappers,
                     fieldType,defaultFieldType,multiFieldsBuilder.build(this, context), copyTo);
         }
     }
 
     public static class TypeParser implements Mapper.TypeParser {
-        private ThreadPool threadPool;
-
-        public TypeParser() {
-
-        }
-
-        public TypeParser(ThreadPool threadPool) {
-            this.threadPool = threadPool;
-        }
-
         @Override
         @SuppressWarnings("unchecked")
         public Mapper.Builder parse(String name, Map<String, Object> node, ParserContext parserContext) throws MapperParsingException {
-            ImageMapper.Builder builder = new ImageMapper.Builder(name, threadPool);
+            ImageMapper.Builder builder = new ImageMapper.Builder(name);
             Map<String, Object> features = Maps.newHashMap();
             Map<String, Object> metadatas = Maps.newHashMap();
 
-            for (Map.Entry<String, Object> entry : node.entrySet()) {
-                String fieldName = entry.getKey();
+            for (Iterator<Map.Entry<String, Object>> iterator = node.entrySet().iterator(); iterator.hasNext();) {
+                Map.Entry<String, Object> entry = iterator.next();
+                String fieldName = Strings.toUnderscoreCase(entry.getKey());
                 Object fieldNode = entry.getValue();
-
                 if (FEATURE.equals(fieldName)) {
-                   features = (Map<String, Object>) fieldNode;
+                    features = (Map<String, Object>) fieldNode;
+                    iterator.remove();
                 } else if (METADATA.equals(fieldName)) {
                     metadatas = (Map<String, Object>) fieldNode;
+                    iterator.remove();
                 }
             }
 
@@ -205,7 +188,6 @@ public class ImageMapper extends FieldMapper {
             for (Map.Entry<String, Object> entry : features.entrySet()) {
                 String feature = entry.getKey();
                 Map<String, Object> featureMap = (Map<String, Object>) entry.getValue();
-
                 // process hash for each feature
                 if (featureMap.containsKey(HASH)) {
                     Object hashVal = featureMap.get(HASH);
@@ -232,7 +214,10 @@ public class ImageMapper extends FieldMapper {
                 String metadataName = entry.getKey();
                 Map<String, Object> metadataMap = (Map<String, Object>) entry.getValue();
                 String fieldType = (String) metadataMap.get("type");
-                builder.addMetadata(metadataName, (FieldMapper.Builder) parserContext.typeParser(fieldType).parse(metadataName, metadataMap, parserContext));
+                builder.addMetadata(metadataName, (FieldMapper.Builder) parserContext
+                        .typeParser(fieldType)
+                        .parse(metadataName, metadataMap, parserContext)
+                );
             }
 
             return builder;
@@ -240,8 +225,6 @@ public class ImageMapper extends FieldMapper {
     }
 
     private final String name;
-
-    private final ThreadPool threadPool;
 
     private final Settings settings;
 
@@ -253,13 +236,11 @@ public class ImageMapper extends FieldMapper {
 
     private volatile ImmutableOpenMap<String, FieldMapper> metadataMappers = ImmutableOpenMap.of();
 
-
-    public ImageMapper(String name, ThreadPool threadPool, Settings indexSettings, Map<FeatureEnum, Map<String, Object>> features, Map<String, FieldMapper> featureMappers,
+    public ImageMapper(String name,Settings indexSettings, Map<FeatureEnum, Map<String, Object>> features, Map<String, FieldMapper> featureMappers,
                        Map<String, FieldMapper> hashMappers, Map<String, FieldMapper> metadataMappers,
                        MappedFieldType type, MappedFieldType defaultFieldType,MultiFields multiFields, CopyTo copyTo) {
         super(name, type, defaultFieldType, indexSettings, multiFields, copyTo);
         this.name = name;
-        this.threadPool = threadPool;
         this.settings = indexSettings;
         if (features != null) {
             this.features = ImmutableOpenMap.builder(this.features).putAll(features).build();
@@ -304,40 +285,12 @@ public class ImageMapper extends FieldMapper {
         }
         final BufferedImage finalImg = img;
 
-
-
         final Map<FeatureEnum, LireFeature> featureExtractMap = new MapMaker().makeMap();
 
         // have multiple features, use ThreadPool to process each feature
         if (useThreadPool && features.size() > 1) {
-            final CountDownLatch latch = new CountDownLatch(features.size());
-            Executor executor = threadPool.generic();
 
-            for (ObjectObjectCursor<FeatureEnum, Map<String, Object>> cursor : features) {
-                final FeatureEnum featureEnum = cursor.key;
-                executor.execute(new Runnable() {
-                    @Override
-                    public void run() {
-                        try {
-                            LireFeature lireFeature = featureEnum.getFeatureClass().newInstance();
-                            lireFeature.extract(finalImg);
-                            featureExtractMap.put(featureEnum, lireFeature);
-                        } catch (Throwable e){
-                            logger.error("Failed to extract feature from image", e);
-                        } finally {
-                            latch.countDown();
-                        }
-                    }
-                });
-            }
-            try {
-                latch.await();
-            } catch (InterruptedException e) {
-                logger.debug("Interrupted extract feature from image", e);
-                Thread.currentThread().interrupt();
-            }
         }
-
 
         for (ObjectObjectCursor<FeatureEnum, Map<String, Object>> cursor : features) {
             FeatureEnum featureEnum = cursor.key;
@@ -368,7 +321,6 @@ public class ImageMapper extends FieldMapper {
                         } else if (hashEnum.equals(HashEnum.LSH)) {
                             hashVals = LocalitySensitiveHashing.generateHashes(lireFeature.getDoubleHistogram());
                         }
-
                         String mapperName = featureEnum.name() + "." + HASH + "." + h;
                         FieldMapper hashMapper = hashMappers.get(mapperName) ;
                         hashMapper.parse(context.createExternalValueContext(SerializationUtils.arrayToString(hashVals)));

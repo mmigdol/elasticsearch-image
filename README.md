@@ -3,7 +3,7 @@ Image Plugin for Elasticsearch
 
 [![Build Status](https://travis-ci.org/kzwang/elasticsearch-image.png?branch=master)](https://travis-ci.org/kzwang/elasticsearch-image)
 
-The Image Plugin is an Content Based Image Retrieval Plugin for Elasticsearch using [LIRE (Lucene Image Retrieval)](https://code.google.com/p/lire/). It allows users to index images and search for similar images.
+The Image Plugin is an Content Based Image Retrieval Plugin for Elasticsearch using [LIRE (Lucene Image Retrieval)](https://github.com/dermotte/LIRE/). It allows users to index images and search for similar images.
 
 It adds an `image` field type and an `image` query
 
@@ -11,7 +11,7 @@ In order to install the plugin, simply run: `bin\plugin install zengde/elasticse
 
 |     Image Plugin          |  elasticsearch    | Release date |
 |---------------------------|-------------------|:------------:|
-| 2.1.1                     | 2.1.1             |              |
+| 2.1.1                     | 2.1.1             | 2016-02-23   |
 | 1.3.0-SNAPSHOT (master)   | 1.1.0             |              |
 | 1.2.0                     | 1.0.1             | 2014-03-20   |
 | 1.1.0                     | 1.0.1             | 2014-03-13   |
@@ -152,8 +152,29 @@ See [Large image data sets with LIRE ?some new numbers](http://www.semanticmetad
 | index.image.use_thread_pool | use multiple thread when multiple features are required | True |
 | index.image.ignore_metadata_error| ignore errors happened during extract metadata from image | True |
 
+## TODO:
+- only test with search
+```sh
+curl -XPOST 'localhost:9200/test/test/_search' -d '{
+    "query": {
+        "image": {
+            "my_img": {
+                "feature": "CEDD",
+                "image": "... base64 encoded image to search ...",
+                "hash": "BIT_SAMPLING",
+                "boost": 2.1
+            }
+        }
+    }
+}'
+```
+should works with limit and some others
+
+
 ## ChangeLog
-#### 2.1.1 (2016-01-06)
+#### 2.1.1 (2016-02-23)
+- support es 2.1.1
+
 
 #### 1.2.0 (2014-03-20)
 
